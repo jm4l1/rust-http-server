@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use super::thread_pool::ThreadPool;
+
 pub struct Server {
     port: u16,
     listen_thread: Option<JoinHandle<()>>,
