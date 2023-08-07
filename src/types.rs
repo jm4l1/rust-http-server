@@ -2,6 +2,7 @@ use std::cmp::PartialEq;
 use std::fmt::{self, Display};
 use std::str::FromStr;
 
+// Method
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Method {
     Get,
@@ -11,7 +12,6 @@ pub enum Method {
     Delete,
     Options,
 }
-
 impl Method {
     pub fn from_string(string: &str) -> Option<Self> {
         match string.to_uppercase().as_str() {
@@ -25,7 +25,6 @@ impl Method {
         }
     }
 }
-
 impl Display for Method {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -39,6 +38,7 @@ impl Display for Method {
     }
 }
 
+// ResponseCode
 #[derive(PartialEq, Debug, Clone)]
 pub enum ResponseCode {
     Unknown = 0,
@@ -55,7 +55,6 @@ pub enum ResponseCode {
     GatewayTimeout = 504,
     HttpVersionNotSupported = 505,
 }
-
 impl ResponseCode {
     pub fn new(value: usize) -> Self {
         match value {
@@ -110,14 +109,13 @@ impl ResponseCode {
         }
     }
 }
-
+// RequestLine
 #[derive(Debug, Clone)]
 pub struct RequestLine {
     pub version: HttpVersion,
     pub method: Method,
     pub resource: String,
 }
-
 impl RequestLine {
     pub fn new(version: HttpVersion, method: Method, resource: String) -> Self {
         Self {
@@ -158,7 +156,6 @@ impl RequestLine {
         })
     }
 }
-
 impl PartialEq for RequestLine {
     fn eq(&self, other: &Self) -> bool {
         self.version == other.version
@@ -166,12 +163,12 @@ impl PartialEq for RequestLine {
             && self.resource == other.resource
     }
 }
+// StatusLine
 #[derive(Debug, Clone)]
 pub struct StatusLine {
     version: HttpVersion,
     response_code: ResponseCode,
 }
-
 impl StatusLine {
     pub fn new(version: HttpVersion, code: usize) -> Self {
         Self {
@@ -186,19 +183,18 @@ impl StatusLine {
         s
     }
 }
-
 impl PartialEq for StatusLine {
     fn eq(&self, other: &Self) -> bool {
         self.version == other.version && self.response_code == other.response_code
     }
 }
 
+// Header
 #[derive(Debug, Clone)]
 pub struct Header {
     field_name: String,
     field_value: String,
 }
-
 impl Header {
     pub fn new(field_name: &str, field_value: &str) -> Self {
         Self {
@@ -222,7 +218,6 @@ impl PartialEq<Header> for &Header {
             && other.field_value.trim() == self.field_value.trim();
     }
 }
-
 impl PartialEq<Header> for &str {
     fn eq(&self, other: &Header) -> bool {
         let items: Vec<&str> = self.split(":").collect();
@@ -230,12 +225,13 @@ impl PartialEq<Header> for &str {
             && other.field_value.trim() == items[1].trim();
     }
 }
-
 impl Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} : {}", self.field_name, self.field_value)
     }
 }
+
+// HttpVersion
 #[derive(PartialEq, Debug, Clone)]
 pub enum HttpVersion {
     HttpV1_0,
@@ -243,7 +239,6 @@ pub enum HttpVersion {
     HttpV2_0,
     HttpV3_0,
 }
-
 impl HttpVersion {
     pub fn from_string(string: &str) -> Option<Self> {
         match string {
@@ -264,6 +259,7 @@ impl HttpVersion {
     }
 }
 
+// Request
 #[derive(Debug)]
 pub struct Request {
     pub request_line: RequestLine,
@@ -365,14 +361,13 @@ impl Request {
         self.headers.push(Header::new(field_name, field_value));
     }
 }
-
+// Response
 #[derive(Debug, Clone)]
 pub struct Response {
     status_line: StatusLine,
     headers: Vec<Header>,
     body: Vec<u8>,
 }
-
 impl Response {
     pub fn new(version: HttpVersion, response_code: ResponseCode, body: Vec<u8>) -> Self {
         Self {
@@ -406,11 +401,11 @@ impl Response {
         self.body.len()
     }
 }
+// tests
 #[cfg(test)]
 mod tests {
-    use crate::types::Request;
-
     use super::{Header, HttpVersion, Method, RequestLine, ResponseCode, StatusLine};
+    use crate::types::Request;
 
     #[test]
     pub fn method_to_string() {
