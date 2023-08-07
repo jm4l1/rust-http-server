@@ -1,9 +1,13 @@
+extern crate bincode;
+
 use std::error::Error;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use crate::types::{HttpVersion, Request, Response, ResponseCode};
 
 use super::thread_pool::ThreadPool;
 
@@ -146,6 +150,47 @@ fn do_cli_work(sender: mpsc::Sender<State>, state_receiver: Arc<Mutex<mpsc::Rece
 fn handle_connection(address: SocketAddr, mut stream: TcpStream) {
     println!("Connection received from: {address:?}");
     let mut buffer = [0; 512];
-    stream.read(&mut buffer).unwrap();
-    println!("{:?}", buffer)
+    match stream.read(&mut buffer) {
+        Ok(_) => {
+            match std::str::from_utf8(&buffer) {
+                Ok(buffer_string) => {
+                    let request = Request::parse_from_string(&buffer_string.to_string());
+                    match &request {
+                        Some(valid_request) => {
+                            let resource = &valid_request.request_line.resource;
+                            let mut response = Response::new(
+                                valid_request.request_line.version.clone(),
+                                ResponseCode::Ok,
+                                format!("{} found", resource).into_bytes(),
+                            );
+                            response.add_header("Content-type", "text/html");
+                            response.add_header(
+                                "Content-length",
+                                format!("{}", response.body_length()).as_str(),
+                            );
+                            stream.write(response.as_string().as_bytes()).unwrap();
+                        }
+                        None => {
+                            let response = Response::new(
+                                HttpVersion::HttpV1_1,
+                                ResponseCode::BadRequest,
+                                format!("invalid request").into_bytes(),
+                            );
+                            stream.write(response.as_string().as_bytes()).unwrap();
+                        }
+                    }
+                }
+                Err(_) => {
+                    let response = Response::new(
+                        HttpVersion::HttpV1_1,
+                        ResponseCode::BadRequest,
+                        format!("invalid request").into_bytes(),
+                    );
+                    stream.write(response.as_string().as_bytes()).unwrap();
+                }
+            };
+        }
+        Err(error) => eprintln!("{:?}", error),
+    };
+    stream.shutdown(std::net::Shutdown::Read).unwrap();
 }

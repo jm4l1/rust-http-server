@@ -1,7 +1,8 @@
 use std::cmp::PartialEq;
 use std::fmt::{self, Display};
+use std::str::FromStr;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Method {
     Get,
     Head,
@@ -38,7 +39,7 @@ impl Display for Method {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ResponseCode {
     Unknown = 0,
     Ok = 200,
@@ -110,15 +111,15 @@ impl ResponseCode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RequestLine {
-    version: HttpVersion,
-    method: Method,
-    resource: &'static str,
+    pub version: HttpVersion,
+    pub method: Method,
+    pub resource: String,
 }
 
 impl RequestLine {
-    pub fn new(version: HttpVersion, method: Method, resource: &'static str) -> Self {
+    pub fn new(version: HttpVersion, method: Method, resource: String) -> Self {
         Self {
             version,
             method,
@@ -126,7 +127,7 @@ impl RequestLine {
         }
     }
 
-    pub fn from_string(string: &'static str) -> Option<Self> {
+    pub fn from_string(string: &String) -> Option<Self> {
         let mut iter = string.split_whitespace();
         let size = iter.clone().count();
         if size != 3 {
@@ -141,7 +142,7 @@ impl RequestLine {
             }
             Some(_) => (),
         };
-        let resource = iter.next().unwrap();
+        let resource = iter.next().unwrap().to_string();
         let version = HttpVersion::from_string(iter.next().unwrap());
         match version {
             None => {
@@ -165,7 +166,7 @@ impl PartialEq for RequestLine {
             && self.resource == other.resource
     }
 }
-
+#[derive(Debug, Clone)]
 pub struct StatusLine {
     version: HttpVersion,
     response_code: ResponseCode,
@@ -192,7 +193,7 @@ impl PartialEq for StatusLine {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Header {
     field_name: String,
     field_value: String,
@@ -204,6 +205,21 @@ impl Header {
             field_name: String::from(field_name),
             field_value: String::from(field_value),
         }
+    }
+    pub fn to_string(&self) -> String {
+        format!("{}:{}", self.field_name, self.field_value)
+    }
+}
+impl PartialEq for Header {
+    fn eq(&self, other: &Header) -> bool {
+        return other.field_name.trim() == self.field_name.trim()
+            && other.field_value.trim() == self.field_value.trim();
+    }
+}
+impl PartialEq<Header> for &Header {
+    fn eq(&self, other: &Header) -> bool {
+        return other.field_name.trim() == self.field_name.trim()
+            && other.field_value.trim() == self.field_value.trim();
     }
 }
 
@@ -220,7 +236,7 @@ impl Display for Header {
         write!(f, "{} : {}", self.field_name, self.field_value)
     }
 }
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum HttpVersion {
     HttpV1_0,
     HttpV1_1,
@@ -248,8 +264,152 @@ impl HttpVersion {
     }
 }
 
+#[derive(Debug)]
+pub struct Request {
+    pub request_line: RequestLine,
+    pub headers: Vec<Header>,
+    pub body: Vec<u8>,
+}
+impl Request {
+    pub fn parse_from_string(request: &String) -> Option<Self> {
+        let mut split = request.split("\r\n");
+        let request_line = match split.next() {
+            Some(maybe_request_line) => {
+                match RequestLine::from_string(&maybe_request_line.to_string()) {
+                    Some(valid_request_line) => valid_request_line,
+                    None => return None,
+                }
+            }
+            None => return None,
+        };
+        let mut headers = Vec::<Header>::new();
+        loop {
+            match split.next() {
+                Some(header_string) => {
+                    if header_string == "" {
+                        break;
+                    }
+                    let header_split: Vec<&str> = header_string.split(':').collect();
+                    if header_split.len() < 1 {
+                        continue;
+                    }
+                    let header = Header {
+                        field_name: String::from_str(header_split[0]).unwrap(),
+                        field_value: if header_split.len() > 1 {
+                            String::from_str(&header_split[1..].join(":").trim()).unwrap()
+                        } else {
+                            String::new()
+                        },
+                    };
+                    headers.push(header);
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        let body = Vec::<u8>::with_capacity(0);
+
+        Some(Request {
+            request_line,
+            headers,
+            body,
+        })
+    }
+    pub fn parse_from_str(request: &'static str) -> Option<Self> {
+        let mut split = request.split("\r\n");
+        let request_line = match split.next() {
+            Some(maybe_request_line) => {
+                match RequestLine::from_string(&maybe_request_line.to_string()) {
+                    Some(valid_request_line) => valid_request_line,
+                    None => return None,
+                }
+            }
+            None => return None,
+        };
+        let mut headers = Vec::<Header>::new();
+        loop {
+            match split.next() {
+                Some(header_string) => {
+                    if header_string == "" {
+                        break;
+                    }
+                    let header_split: Vec<&str> = header_string.split(':').collect();
+                    if header_split.len() < 1 {
+                        continue;
+                    }
+                    let header = Header {
+                        field_name: String::from_str(header_split[0]).unwrap(),
+                        field_value: if header_split.len() > 1 {
+                            String::from_str(&header_split[1..].join(":").trim()).unwrap()
+                        } else {
+                            String::new()
+                        },
+                    };
+                    headers.push(header);
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        let body = Vec::<u8>::with_capacity(0);
+
+        Some(Request {
+            request_line,
+            headers,
+            body,
+        })
+    }
+    pub fn add_header(mut self, field_name: &String, field_value: &String) {
+        self.headers.push(Header::new(field_name, field_value));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Response {
+    status_line: StatusLine,
+    headers: Vec<Header>,
+    body: Vec<u8>,
+}
+
+impl Response {
+    pub fn new(version: HttpVersion, response_code: ResponseCode, body: Vec<u8>) -> Self {
+        Self {
+            status_line: StatusLine {
+                version,
+                response_code,
+            },
+            headers: Vec::<Header>::new(),
+            body,
+        }
+    }
+    pub fn as_string(self) -> String {
+        let output_string: String = self.status_line.to_string();
+        let headers_string = self
+            .headers
+            .iter()
+            .map(|header: &Header| header.to_string().trim().to_string())
+            .collect::<Vec<String>>()
+            .join("\r\n");
+        let body_string = std::str::from_utf8(&self.body[..]).unwrap();
+        format!(
+            "{}\r\n{}\r\n\r\n{}",
+            output_string, headers_string, body_string
+        )
+    }
+    pub fn add_header(&mut self, field_name: &str, field_value: &str) {
+        self.headers.push(Header::new(field_name, field_value));
+    }
+
+    pub fn body_length(&self) -> usize {
+        self.body.len()
+    }
+}
 #[cfg(test)]
 mod tests {
+    use crate::types::Request;
+
     use super::{Header, HttpVersion, Method, RequestLine, ResponseCode, StatusLine};
 
     #[test]
@@ -289,10 +449,11 @@ mod tests {
     #[test]
     pub fn parse_request_line() {
         let request_line_string = "GET /home HTTP/1.1 ";
-        let request_line = RequestLine::new(HttpVersion::HttpV1_1, Method::Get, "/home");
+        let request_line =
+            RequestLine::new(HttpVersion::HttpV1_1, Method::Get, "/home".to_string());
         assert_eq!(
             request_line,
-            RequestLine::from_string(request_line_string).unwrap()
+            RequestLine::from_string(&request_line_string.to_string()).unwrap()
         )
     }
 
@@ -312,5 +473,24 @@ mod tests {
         assert_eq!("Content-type : application/json", header);
         assert_eq!("Content-type: application/json", header);
         assert_eq!("Content-type:application/json", header);
+        assert_eq!(Header::new("Content-type", "application/json"), header);
+    }
+
+    #[test]
+    pub fn parse_string_to_request() {
+        const  REQUEST: &str = "GET / HTTP/1.1\r\nHost: localhost:50000\r\nConnection: keep-alive\r\nCache-Control: max-age=0\r\nsec-ch-ua: \"Not/A)Brand\";v=\"99\", \"Google Chrome\";v=\"115\", \"Chromium\";v=\"115\"\r\nsec-ch-ua-mobile: ?0\r\nsec-ch-ua-platform: \"macOS\"\r\nUpgrade-Insecure-Requests: 1\r\nUser-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;\r\n\r\nBody";
+        let maybe_request = Request::parse_from_string(&REQUEST.to_string());
+        assert_eq!(maybe_request.is_none(), false);
+        assert_eq!(maybe_request.is_some(), true);
+        let request = maybe_request.unwrap();
+        assert_eq!(request.request_line.version, HttpVersion::HttpV1_1);
+        assert_eq!(request.request_line.method, Method::Get);
+        assert_eq!(request.headers.len(), 9);
+        assert_eq!(
+            request
+                .headers
+                .contains(&Header::new("Host", "localhost:50000")),
+            true
+        );
     }
 }
