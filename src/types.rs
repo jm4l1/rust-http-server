@@ -387,7 +387,7 @@ impl Response {
             .map(|header: &Header| header.to_string().trim().to_string())
             .collect::<Vec<String>>()
             .join("\r\n");
-        let body_string = std::str::from_utf8(&self.body[..]).unwrap();
+        let body_string = std::str::from_utf8(&self.body[..]).unwrap_or("");
         format!(
             "{}\r\n{}\r\n\r\n{}",
             output_string, headers_string, body_string
@@ -399,6 +399,13 @@ impl Response {
 
     pub fn body_length(&self) -> usize {
         self.body.len()
+    }
+    pub fn body(&mut self, body: Vec<u8>) {
+        self.body = body;
+    }
+
+    pub fn status_code(&mut self, response_code: ResponseCode) {
+        self.status_line.response_code = response_code;
     }
 }
 // tests

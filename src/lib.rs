@@ -1,3 +1,4 @@
+mod file_handler;
 pub mod http;
 pub mod thread_pool;
 mod traits;

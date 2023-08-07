@@ -7,7 +7,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use crate::types::{HttpVersion, Request, Response, ResponseCode};
+use crate::file_handler;
+use crate::types::{HttpVersion, Method, Request, Response, ResponseCode};
 
 use super::thread_pool::ThreadPool;
 
@@ -147,6 +148,56 @@ fn do_cli_work(sender: mpsc::Sender<State>, state_receiver: Arc<Mutex<mpsc::Rece
     }
 }
 
+fn handle_request_string(buffer_string: String) -> Response {
+    let request = Request::parse_from_string(&buffer_string.to_string());
+    match &request {
+        Some(valid_request) => {
+            let method = &valid_request.request_line.method;
+            if *method != Method::Get {
+                let mut response = Response::new(
+                                    valid_request.request_line.version.clone(),
+                                    ResponseCode::NotImplemented,
+                                    format!("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Not Implemented</title></head><body>Method Not Implemented</body></html>").into_bytes(),
+                                );
+                response.add_header("Content-type", "text/html");
+                response.add_header(
+                    "Content-length",
+                    format!("{}", response.body_length()).as_str(),
+                );
+                response
+            } else {
+                let resource = format!("www/{}", valid_request.request_line.resource);
+                let resource_data = file_handler::read_file(std::path::Path::new(&resource));
+                let mut response = Response::new(
+                    valid_request.request_line.version.clone(),
+                    ResponseCode::Ok,
+                    Vec::<u8>::new(),
+                );
+                match resource_data {
+                    Some(data) => response.body(data),
+                    None => {
+                        response.status_code(ResponseCode::NotFound);
+                        response.body(format!("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Not Found</title></head><body>Method Not Found</body></html>").into_bytes())
+                    }
+                }
+                response.add_header("Content-type", "text/html");
+                response.add_header(
+                    "Content-length",
+                    format!("{}", response.body_length()).as_str(),
+                );
+                response
+            }
+        }
+        None => {
+            let response = Response::new(
+                HttpVersion::HttpV1_1,
+                ResponseCode::BadRequest,
+                format!("invalid request").into_bytes(),
+            );
+            response
+        }
+    }
+}
 fn handle_connection(address: SocketAddr, mut stream: TcpStream) {
     println!("Connection received from: {address:?}");
     let mut buffer = [0; 512];
@@ -154,31 +205,8 @@ fn handle_connection(address: SocketAddr, mut stream: TcpStream) {
         Ok(_) => {
             match std::str::from_utf8(&buffer) {
                 Ok(buffer_string) => {
-                    let request = Request::parse_from_string(&buffer_string.to_string());
-                    match &request {
-                        Some(valid_request) => {
-                            let resource = &valid_request.request_line.resource;
-                            let mut response = Response::new(
-                                valid_request.request_line.version.clone(),
-                                ResponseCode::Ok,
-                                format!("{} found", resource).into_bytes(),
-                            );
-                            response.add_header("Content-type", "text/html");
-                            response.add_header(
-                                "Content-length",
-                                format!("{}", response.body_length()).as_str(),
-                            );
-                            stream.write(response.as_string().as_bytes()).unwrap();
-                        }
-                        None => {
-                            let response = Response::new(
-                                HttpVersion::HttpV1_1,
-                                ResponseCode::BadRequest,
-                                format!("invalid request").into_bytes(),
-                            );
-                            stream.write(response.as_string().as_bytes()).unwrap();
-                        }
-                    }
+                    let response = handle_request_string(buffer_string.to_string());
+                    stream.write(response.as_string().as_bytes()).unwrap();
                 }
                 Err(_) => {
                     let response = Response::new(
