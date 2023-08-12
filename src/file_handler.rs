@@ -1,5 +1,5 @@
 use std::fs::OpenOptions;
-use std::io::{prelude::*, BufReader, BufWriter};
+use std::io::{prelude::*, BufReader};
 use std::path::Path;
 
 pub fn read_file(path: &Path) -> Option<Vec<u8>> {

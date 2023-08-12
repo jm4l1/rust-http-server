@@ -155,6 +155,15 @@ impl RequestLine {
             resource,
         })
     }
+
+    pub fn to_string(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.version.to_string(),
+            self.method,
+            self.resource
+        )
+    }
 }
 impl PartialEq for RequestLine {
     fn eq(&self, other: &Self) -> bool {
@@ -360,6 +369,9 @@ impl Request {
     pub fn add_header(mut self, field_name: &String, field_value: &String) {
         self.headers.push(Header::new(field_name, field_value));
     }
+    pub fn get_request_line(&self) -> String {
+        self.request_line.to_string()
+    }
 }
 // Response
 #[derive(Debug, Clone)]
@@ -406,6 +418,16 @@ impl Response {
 
     pub fn status_code(&mut self, response_code: ResponseCode) {
         self.status_line.response_code = response_code;
+    }
+
+    pub fn get_status_code(&self) -> ResponseCode {
+        self.status_line.response_code.clone()
+    }
+    pub fn get_header(&self, name: &'static str) -> &str {
+        match self.headers.iter().find(|header| header.field_name == name) {
+            Some(header) => &header.field_value,
+            None => "",
+        }
     }
 }
 // tests

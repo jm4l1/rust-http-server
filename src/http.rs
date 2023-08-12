@@ -1,5 +1,6 @@
 extern crate bincode;
 
+use chrono::{DateTime, Utc};
 use std::error::Error;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -12,6 +13,8 @@ use crate::types::{HttpVersion, Method, Request, Response, ResponseCode};
 
 use super::thread_pool::ThreadPool;
 
+const METHOD_NOT_IMPLEMENTED_STR : &'static str = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Not Implemented</title></head><body>Method Not Implemented</body></html>";
+const METHOD_NOT_FOUND_STR : &'static str = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Not Found</title></head><body>Method Not Found</body></html>";
 pub struct Server {
     port: u16,
     listen_thread: Option<JoinHandle<()>>,
@@ -81,6 +84,21 @@ impl Server {
     }
 }
 
+fn log(request: &Request, response: &Response) {
+    let status_code: ResponseCode = response.get_status_code();
+    let formatted_status_code = match status_code.clone() as usize {
+        0..=199 => format!("\x1b[1;34m{}\x1b[0m", status_code.clone() as usize),
+        200..=299 => format!("\x1b[1;32m{}\x1b[0m", status_code.clone() as usize),
+        300..=399 => format!("\x1b[1;33m{}\x1b[0m", status_code.clone() as usize),
+        _ => format!("\x1b[1;31m{}\x1b[0m", status_code as usize),
+    };
+    println!(
+        "[{}] {} {}",
+        response.get_header("Date"),
+        request.get_request_line(),
+        formatted_status_code
+    );
+}
 fn do_listen_work(
     port: u16,
     listener: &TcpListener,
@@ -147,45 +165,61 @@ fn do_cli_work(sender: mpsc::Sender<State>, state_receiver: Arc<Mutex<mpsc::Rece
         input.clear();
     }
 }
+fn handle_get_request(request: &Request) -> Response {
+    let resource = format!(
+        "www/{}",
+        if &request.request_line.resource == "/" {
+            "index.html"
+        } else {
+            &request.request_line.resource
+        }
+    );
+    let resource_data = file_handler::read_file(std::path::Path::new(&resource));
+    let mut response = Response::new(
+        request.request_line.version.clone(),
+        ResponseCode::Ok,
+        Vec::<u8>::new(),
+    );
+    match resource_data {
+        Some(data) => response.body(data),
+        None => {
+            response.status_code(ResponseCode::NotFound);
+            response.body(format!("{}", METHOD_NOT_FOUND_STR).into_bytes())
+        }
+    }
+    response.add_header("Content-type", "text/html");
+    response.add_header(
+        "Content-length",
+        format!("{}", response.body_length()).as_str(),
+    );
+    response
+}
+
+fn handle_post_request(_request: &Request) -> Response {
+    Response::new(HttpVersion::HttpV1_1, ResponseCode::Ok, vec![])
+}
 
 fn handle_request_string(buffer_string: String) -> Response {
     let request = Request::parse_from_string(&buffer_string.to_string());
-    match &request {
+    let mut response = match &request {
         Some(valid_request) => {
             let method = &valid_request.request_line.method;
-            if *method != Method::Get {
-                let mut response = Response::new(
-                                    valid_request.request_line.version.clone(),
-                                    ResponseCode::NotImplemented,
-                                    format!("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Not Implemented</title></head><body>Method Not Implemented</body></html>").into_bytes(),
-                                );
-                response.add_header("Content-type", "text/html");
-                response.add_header(
-                    "Content-length",
-                    format!("{}", response.body_length()).as_str(),
-                );
-                response
-            } else {
-                let resource = format!("www/{}", valid_request.request_line.resource);
-                let resource_data = file_handler::read_file(std::path::Path::new(&resource));
-                let mut response = Response::new(
-                    valid_request.request_line.version.clone(),
-                    ResponseCode::Ok,
-                    Vec::<u8>::new(),
-                );
-                match resource_data {
-                    Some(data) => response.body(data),
-                    None => {
-                        response.status_code(ResponseCode::NotFound);
-                        response.body(format!("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Not Found</title></head><body>Method Not Found</body></html>").into_bytes())
-                    }
+            match method {
+                Method::Get => handle_get_request(valid_request),
+                Method::Post => handle_post_request(valid_request),
+                _ => {
+                    let mut response = Response::new(
+                        valid_request.request_line.version.clone(),
+                        ResponseCode::NotImplemented,
+                        format!("{}", METHOD_NOT_IMPLEMENTED_STR).into_bytes(),
+                    );
+                    response.add_header("Content-type", "text/html");
+                    response.add_header(
+                        "Content-length",
+                        format!("{}", response.body_length()).as_str(),
+                    );
+                    response
                 }
-                response.add_header("Content-type", "text/html");
-                response.add_header(
-                    "Content-length",
-                    format!("{}", response.body_length()).as_str(),
-                );
-                response
             }
         }
         None => {
@@ -196,8 +230,17 @@ fn handle_request_string(buffer_string: String) -> Response {
             );
             response
         }
-    }
+    };
+
+    let date_time: DateTime<Utc> = std::time::SystemTime::now().into();
+    response.add_header(
+        "Date",
+        format!("{}", date_time.format("%a, %d %b %Y %H:%M:%S UTC")).as_str(),
+    );
+    log(&request.unwrap(), &response);
+    response
 }
+
 fn handle_connection(address: SocketAddr, mut stream: TcpStream) {
     println!("Connection received from: {address:?}");
     let mut buffer = [0; 512];
