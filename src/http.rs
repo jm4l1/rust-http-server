@@ -25,7 +25,6 @@ enum State {
     Running,
     Terminated,
 }
-
 impl Server {
     pub fn new(port: u16) -> Server {
         Server {
@@ -135,7 +134,6 @@ fn do_listen_work(
         };
     }
 }
-
 fn do_cli_work(sender: mpsc::Sender<State>, state_receiver: Arc<Mutex<mpsc::Receiver<State>>>) {
     println!("Starting cli worker");
     loop {
@@ -194,11 +192,9 @@ fn handle_get_request(request: &Request) -> Response {
     );
     response
 }
-
 fn handle_post_request(_request: &Request) -> Response {
     Response::new(HttpVersion::HttpV1_1, ResponseCode::Ok, vec![])
 }
-
 fn handle_request_string(buffer_string: String) -> Response {
     let request = Request::parse_from_string(&buffer_string.to_string());
     let mut response = match &request {
@@ -240,7 +236,6 @@ fn handle_request_string(buffer_string: String) -> Response {
     log(&request.unwrap(), &response);
     response
 }
-
 fn handle_connection(address: SocketAddr, mut stream: TcpStream) {
     println!("Connection received from: {address:?}");
     let mut buffer = [0; 512];
